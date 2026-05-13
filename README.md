@@ -4,50 +4,45 @@
 
 ## 功能
 
-- 清理 `sessions.json` 中的无效条目（已删除文件但仍存在的"幽灵"记录）
-- 删除孤立的 `.jsonl`、`.trajectory.jsonl`、`.checkpoint.jsonl` 文件
+- 扫描并列出所有会话，分类显示状态
+- 根据会话状态给出清理建议
+- **先列后清** — 展示清理计划，由用户确认后再执行，避免误删
 - 保留正在运行（`running`）的会话和各 Agent 的 main session
 - 自动识别 `main` Agent 是否存在并做相应处理
 - 支持跨平台（任何安装了 OpenClaw 的机器均可使用）
 
 ## 安装
 
-### 方式一：通过 OpenClaw Skill 管理器安装
-
 ```bash
-openclaw skills install /path/to/session-cleaner.skill
-```
-
-### 方式二：手动安装
-
-将 `session-cleaner` 文件夹复制到 OpenClaw 的 skills 目录：
-
-```bash
-cp -r session-cleaner ~/.openclaw/skills/
+openclaw skills install amiao-session-cleaner
 ```
 
 ## 使用方法
 
-在 OpenClaw 中直接告诉阿喵：
-
+在 OpenClaw 中直接说：
 - "清理会话"
 - "删除旧 session"
 - "整理会话列表"
 
-阿喵会自动加载 `session-cleaner` 技能并执行清理。
+## 工作流程
+
+```
+1. 列出所有会话（按 Agent 分组）
+2. 给出清理建议（哪些保留/哪些删除）
+3. 你确认清理范围
+4. 执行清理 + 重启 Gateway
+```
 
 ## 工作原理
 
 ### 会话存储结构
 
-OpenClaw 的会话数据存储在 `$OPENCLAW_HOME/agents/<agent-id>/sessions/` 目录下：
-
 ```
-sessions/
-├── sessions.json          # 会话索引（会话元数据）
-├── <uuid>.jsonl           # transcript 文件（实际消息记录）
-├── <uuid>.trajectory.jsonl  # 任务轨迹文件
-└── <uuid>.checkpoint.jsonl  # 检查点文件
+~/.openclaw/agents/<agent-id>/sessions/
+├── sessions.json          # 会话索引
+├── <uuid>.jsonl           # transcript 文件
+├── <uuid>.trajectory.jsonl  # 任务轨迹文件（可清理）
+└── <uuid>.checkpoint.jsonl  # 检查点文件（可清理）
 ```
 
 ### 保留策略
@@ -57,40 +52,14 @@ sessions/
 | `running` 状态的会话 | ✅ 是 |
 | 各 Agent 的 main session | ✅ 是 |
 | `done` / `timeout` / `failed` 的子 Agent | ❌ 否 |
-| `.trajectory.jsonl` | ❌ 否 |
-| `.checkpoint.jsonl` | ❌ 否 |
+| `.trajectory.jsonl` / `.checkpoint.jsonl` | ❌ 否 |
 | `main` Agent 的所有会话（若 main 不存在）| ❌ 否 |
-
-### 清理流程
-
-1. 扫描所有 Agent 的 `sessions.json`
-2. 识别可清理的条目（保留 running + main session）
-3. 直接编辑 `sessions.json` 删除无效条目
-4. 删除孤立的 transcript / trajectory / checkpoint 文件
-5. 重启 Gateway 使变更生效
-6. 验证清理结果
 
 ## 注意事项
 
-- **不要删除 running 状态的会话**——正在进行的工作会丢失
-- 建议在清理前备份：`cp sessions.json sessions.json.bak`
-- 清理完成后需重启 Gateway，否则 Control UI 可能仍显示旧数据
-- 如果 `sessions.json` 已为空但 Control UI 仍显示旧数据，重启 Gateway 即可
-
-## 文件结构
-
-```
-session-cleaner/
-├── SKILL.md    # 技能说明文件
-└── README.md   # 本说明文档
-```
-
-## 适用场景
-
-- 控制面板会话列表变得混乱，大量过期条目
-- 磁盘空间被大量 `.trajectory.jsonl` 文件占用
-- `main` Agent 被删除后其旧会话仍显示在列表中
-- 定期维护，保持 OpenClaw 运行状态整洁
+- **绝对不要在未经用户确认前删除任何会话**
+- `running` 状态的会话绝对不能删
+- 清理完成后需重启 Gateway，否则 Control UI 仍显示旧数据
 
 ## License
 
