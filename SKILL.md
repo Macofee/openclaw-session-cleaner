@@ -7,122 +7,80 @@ description: 清理 OpenClaw 无用会话的工具。当需要清理旧会话、
 
 清理 OpenClaw 无用会话，保持会话列表整洁。
 
-## 前置判断
+## 核心原则
 
-执行清理前，先确认：
-- `main` Agent 是否仍然存在（如果不存在，它的 sessions.json 应清空）
-- 哪些会话状态为 `running`（这些绝对不能删）
+**先列出、再建议、最后清理** — 永远先展示分析结果，由用户确认后再执行。
+
+## 工作流程
+
+### 步骤 1：列出所有会话
 
 ```bash
 openclaw agents list
 openclaw sessions --all-agents --limit all
 ```
 
-## 清理步骤
+### 步骤 2：分析并分类
 
-### 步骤 1：清理孤立的 .jsonl 文件（可选）
+识别每条会话的状态和类型：
 
-删除已结束会话的 transcript、trajectory、checkpoint 文件，保留正在进行的：
+| 分类 | 特征 | 建议 |
+|------|------|------|
+| 活跃会话 | `status: running` | ❌ 保留 |
+| Agent 主会话 | 包含 `:main` | ✅ 根据情况 |
+| 已结束的子 Agent | `status: done/timeout/failed` | ⚠️ 建议清理 |
+| main Agent 的会话 | agentId: `main` | ⚠️ 若 main 已不存在则清理 |
+| 历史轨迹文件 | `.trajectory.jsonl` | 🗑️ 建议清理 |
 
-```bash
-OPENCLAW_HOME="${OPENCLAW_HOME:-$HOME/.openclaw}"
-cd "$OPENCLAW_HOME/agents/$AGENT_ID/sessions"
+### 步骤 3：给出清理建议
 
-# 删除 trajectory 和 checkpoint 文件（这些是历史任务痕迹，可以全删）
-find . -name "*.trajectory.jsonl" -delete
-find . -name "*.checkpoint*.jsonl" -delete
+按 Agent 分组，展示：
 
-# 保留：当前运行的 session 和 main session（通过 sessions.json 决定）
-ls *.jsonl | sort -t_ -k2  # 查看剩余文件
+```
+【dispatcher】（当前活跃：2 个）
+  ✅ 保留：当前 dashboard 会话（running）
+  ✅ 保留：飞书 DM 会话（running）
+  🗑️ 建议清理：19 个已结束的子 Agent 会话（done/timeout/failed）
+  🗑️ 建议清理：.trajectory.jsonl 和 .checkpoint.jsonl 文件
+
+【main】（Agent 已不存在）
+  🗑️ 建议清理：全部 4 个会话（sessions.json 为空）
+  🗑️ 建议清理：所有 .jsonl 文件
+
+【file-assistant】
+  ✅ 保留：小文 main 会话（done）
+  ✅ 保留：1 个文件
+
+【knowledge】
+  ✅ 保留：小智 main 会话（done）
+  🗑️ 建议清理：1 个失败的子 Agent 会话
+
+【coder】
+  ✅ 保留：小贾 main 会话（done）
+  ✅ 保留：1 个文件
+
+---
+磁盘节省预估：删除 .trajectory.jsonl 可节省 ~50MB+
 ```
 
-### 步骤 2：清理 sessions.json（核心）
+### 步骤 4：等待用户确认
 
-直接编辑 sessions.json，只保留需要保留的条目：
+在展示完建议后，必须明确问用户：
+
+> "以上是我的清理建议，请确认要清理哪些。输入 '全部清理' 执行全部建议，或指定要清理的内容。"
+
+### 步骤 5：执行清理
+
+获得确认后，调用 `sessions.json` 清理脚本，删除孤立的 .jsonl 文件，最后重启 Gateway。
+
+## 快速清理脚本（Python）
 
 ```python
 import json
 import os
 from pathlib import Path
 
-OPENCLAW_HOME = os.path.expanduser(os.environ.get("OPENCLAW_HOME", "~/.openclaw"))
-
-def clean_agent(agent_id):
-    """清理指定 Agent 的 sessions.json"""
-    sessions_file = Path(OPENCLAW_HOME) / "agents" / agent_id / "sessions" / "sessions.json"
-    if not sessions_file.exists():
-        print(f"[{agent_id}] sessions.json 不存在，跳过")
-        return
-
-    with open(sessions_file, 'r') as f:
-        data = json.load(f)
-
-    if not data:
-        print(f"[{agent_id}] sessions.json 已是空的")
-        return
-
-    # 判断 agent 是否存在
-    agents_json = Path(OPENCLAW_HOME) / "openclaw.json"
-    with open(agents_json, 'r') as f:
-        config = json.load(f)
-    agent_ids = [a['id'] for a in config.get('agents', {}).get('list', [])]
-
-    # main agent 不存在则清空
-    if agent_id == 'main' and agent_id not in agent_ids:
-        new_data = {}
-        print(f"[{agent_id}] main Agent 不存在，清空 sessions.json")
-    else:
-        # 其他：保留 main session 和 running 会话
-        new_data = {
-            k: v for k, v in data.items()
-            if ':main' in k or v.get('status') == 'running'
-        }
-
-    with open(sessions_file, 'w') as f:
-        json.dump(new_data, f)
-
-    removed = len(data) - len(new_data)
-    print(f"[{agent_id}] 保留 {len(new_data)}，删除 {removed}")
-    return removed
-
-# 清理所有主要 Agent
-for agent in ['dispatcher', 'file-assistant', 'knowledge', 'coder', 'main']:
-    clean_agent(agent)
-```
-
-### 步骤 3：重启 Gateway
-
-```bash
-openclaw gateway restart
-```
-
-### 步骤 4：验证
-
-```bash
-openclaw sessions --all-agents --limit all
-```
-
-## 保留策略
-
-| 类型 | 是否保留 |
-|------|---------|
-| `running` 状态的会话 | ✅ 是 |
-| 各 Agent 的 main session（`:main`） | ✅ 是 |
-| `done`/`timeout`/`failed` 的子 Agent | ❌ 否 |
-| `main` Agent 的所有会话（若已不存在）| ❌ 否 |
-| `.trajectory.jsonl` | ❌ 否 |
-| `.checkpoint.jsonl` | ❌ 否 |
-
-## 快速清理（一键脚本）
-
-```bash
-python3 - << 'PYEOF'
-import json
-import os
-from pathlib import Path
-
 home = os.path.expanduser(os.environ.get("OPENCLAW_HOME", os.path.expanduser("~/.openclaw")))
-print(f"OpenClaw home: {home}")
 
 # 读取当前 agent 列表
 agents_file = Path(home) / "openclaw.json"
@@ -152,13 +110,12 @@ for agent in target_agents:
     with open(sf, 'w') as f:
         json.dump(new_data, f)
 
-print("\n完成！重启 Gateway 使变更生效：openclaw gateway restart")
-PYEOF
+print("\n完成！重启 Gateway：openclaw gateway restart")
 ```
 
 ## 注意事项
 
-- **绝对不要删除 running 状态的会话**
-- 清理前建议备份：`cp sessions.json sessions.json.bak`
+- **绝对不要在未经用户确认前删除任何会话**
+- **running 状态的会话绝对不能删**
 - 清理完成后必须重启 Gateway，否则 Control UI 仍显示旧数据
-- 如果 `sessions.json` 为空但 Control UI 仍显示旧会话，重启 Gateway 即可
+- 清理前可以先备份：`cp sessions.json sessions.json.bak`
