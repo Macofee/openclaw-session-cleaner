@@ -48,15 +48,15 @@ openclaw sessions --all-agents --limit all
   🗑️ 建议清理：所有 .jsonl 文件
 
 【file-assistant】
-  ✅ 保留：小文 main 会话（done）
+  ✅ 保留：file-assistant main 会话（done）
   ✅ 保留：1 个文件
 
 【knowledge】
-  ✅ 保留：小智 main 会话（done）
+  ✅ 保留：knowledge main 会话（done）
   🗑️ 建议清理：1 个失败的子 Agent 会话
 
 【coder】
-  ✅ 保留：小贾 main 会话（done）
+  ✅ 保留：coder main 会话（done）
   ✅ 保留：1 个文件
 
 ---
